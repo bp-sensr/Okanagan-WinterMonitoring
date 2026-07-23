@@ -1,14 +1,24 @@
-Park / Protected Area,Site,Latitude,Longitude,Years monitored,,,,,,Data type,Project report/data source (BC WSI project ID 6430)
-,,,,2018-19,2019-20,2020-21,2021-22,2022-23,2024-25,,
-Tplaqin / Enderby Cliffs Park,Enderby Cliffs,50.59,-119.0833,,x,,,,,LT,Paterson 2024
-Kalamalka Lake park,Cougar Canyon,50.1806,-119.2751,x,,x,x,,,LT,Paterson 2024
-Okanagan Mountain Park,Wildhorse Canyon,49.745,-119.6838,,x,,,,,LT,Paterson 2024
-Okanagan Mountain Park,Okanagan Mountain,49.6741,-119.6092,x,,x,x,,,LT,Paterson 2024
-Skaha Bluffs Park,Skaha - Great White,49.4424,-119.5619,,x,,,,,LT,Paterson 2024
-Skaha Bluffs Park,Skaha - Fern Gully / Doctors Wall,49.4434,-119.5656,x,,x,x,x,,LT,Paterson 2024
-Haynes Lease Ecological Reserve,Haynes Lease 11,49.094,-119.5226,x,,,,,,LT,Paterson 2024
-Haynes Lease Ecological Reserve,Haynes Lease 21,49.0923,-119.5202,,x,,,,,LT,Paterson 2024
-Haynes Lease Ecological Reserve,Haynes Lease 31,49.093,-119.5179,,,x,x,x,,LT,Paterson 2024
-Skaha Bluffs Park,Gillies Creek Road Detector,49.4301,-119.5622,,,,,,x,ST,Skurikhina and Kellner 2025
-Skaha Bluffs Park,Gillies Creek Open Forest Detector,49.4312,-119.5619,,,,,,x,ST,Skurikhina and Kellner 2025
-Skaha Bluffs Park,Smythe Drive Spring Detector,49.4284,-119.5668,,,,,,x,ST,Skurikhina and Kellner 2025
+Park / Protected Area,Site,Latitude,Longitude,Years monitored,,,,,,,Data type,Project report/data source (BC WSI project ID 6430)
+,,,,Dec-11,2018-19,2019-20,2020-21,2021-22,2022-23,2024-25,,
+Tplaqin / Enderby Cliffs Park,Enderby Cliffs,50.59,-119.0833,,,x,,,,,LT,Paterson 2024
+Kalamalka Lake park,Cougar Canyon,50.1806,-119.2751,,x,,x,x,,,LT,Paterson 2024
+Okanagan Mountain Park,Wildhorse Canyon,49.745,-119.6838,,,x,,,,,LT,Paterson 2024
+Okanagan Mountain Park,Okanagan Mountain,49.6741,-119.6092,,x,,x,x,,,LT,Paterson 2024
+Skaha Bluffs Park,Skaha - Great White,49.4424,-119.5619,,,x,,,,,LT,Paterson 2024
+Skaha Bluffs Park,Skaha - Fern Gully / Doctors Wall,49.4434,-119.5656,,x,,x,x,x,,LT,Paterson 2024
+Haynes Lease Ecological Reserve,Haynes Lease 11,49.094,-119.5226,,x,,,,,,LT,Paterson 2024
+Haynes Lease Ecological Reserve,Haynes Lease 21,49.0923,-119.5202,,,x,,,,,LT,Paterson 2024
+Haynes Lease Ecological Reserve,Haynes Lease 31,49.093,-119.5179,,,,x,x,x,,LT,Paterson 2024
+Skaha Bluffs Park,Gillies Creek Road Detector,49.4301,-119.5622,,,,,,,x,ST,Skurikhina and Kellner 2025
+Skaha Bluffs Park,Gillies Creek Open Forest Detector,49.4312,-119.5619,,,,,,,x,ST,Skurikhina and Kellner 2025
+Skaha Bluffs Park,Smythe Drive Spring Detector,49.4284,-119.5668,,,,,,,x,ST,Skurikhina and Kellner 2025
+Skaha Bluffs Park,Fern Gully,49.45010082,-119.5616791,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,Fortress,49.43706979,-119.5675525,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,Wave,49.43847868,-119.5652809,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,No Climbs,49.43901179,-119.5627427,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,Great White,49.44152044,-119.5619906,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,Whitewash,49.43475212,-119.56659,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,Unknown,49.43568333,-119.5627347,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,Blazing,49.44029873,-119.5631271,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,Go Anywhere,49.44344496,-119.5620219,x,,,,,,,ST,Sarrell 2012
+Skaha Bluffs Park,Cave Hill,49.44905864,-119.5612108,x,,,,,,,ST,Sarrell 2012
