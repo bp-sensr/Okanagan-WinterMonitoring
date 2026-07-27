@@ -158,16 +158,16 @@ species_by_site_year <- OK %>%
   filter(!Species.Code %in% exclude_ids,
          !is.na(Species.Code)) %>%
   mutate (SYear = as.character(SampleYear),
-    # For pie charts only: collapse couplets and group codes into Other
-    species_pie = case_when(
-      nchar(Species.Code) == 8                               ~ "Other",
-      toupper(Species.Code) %in% c("HILO", "HIF", "LOF")    ~ "Other",
-      !is.na(Bat.Species.Group.Code) &
-        Bat.Species.Group.Code != ""                         ~ "Other",
-      .default = Species.Code
-    ),
-    # For tables: keep everything as-is
-    species_table = Species.Code
+          # For pie charts only: collapse couplets and group codes into Other
+          species_pie = case_when(
+            nchar(Species.Code) == 8                               ~ "Other",
+            toupper(Species.Code) %in% c("HILO", "HIF", "LOF")    ~ "Other",
+            !is.na(Bat.Species.Group.Code) &
+              Bat.Species.Group.Code != ""                         ~ "Other",
+            .default = Species.Code
+          ),
+          # For tables: keep everything as-is
+          species_table = Species.Code
   ) %>%
   group_by(Sample.Station.Label, Longitude..DD., Latitude..DD., SYear, species_pie, species_table) %>%
   summarise(n = sum(Count), .groups = "drop")
@@ -235,6 +235,17 @@ make_sp_table <- function(sp_df, pie_colors) {
       species, n, pct
     )) %>%
     paste(collapse = "")
+}
+
+make_sp_header <- function(uid) {
+  sprintf(
+    '<tr>
+       <th align="left"  style="cursor:pointer;user-select:none" onclick="window.sortSpeciesTable(\'%s\',0,\'text\')">Species &#8597;</th>
+       <th align="right" style="cursor:pointer;user-select:none" onclick="window.sortSpeciesTable(\'%s\',1,\'num\')">n &#8597;</th>
+       <th align="right" style="cursor:pointer;user-select:none" onclick="window.sortSpeciesTable(\'%s\',2,\'num\')">%% &#8597;</th>
+     </tr>',
+    uid, uid, uid
+  )
 }
 
 # ── 5b. make_sp_table: species code and numbers only, no colour swatch ────────
@@ -342,7 +353,7 @@ for (i in seq_len(nrow(site_list))) {
   
   # NOTE: header used to read "%%" because paste0 does no sprintf substitution.
   all_table_html <- paste0(
-    '<tr><th align="left">Species</th><th align="right">n</th><th align="right">%</th></tr>',
+    make_sp_header(uid),
     make_sp_table(sp_all_table, all_colors)
   )
   
@@ -362,7 +373,7 @@ for (i in seq_len(nrow(site_list))) {
         rename(species = species_table)
       yr_total <- sum(sp_yr$n)
       yr_table_html <- paste0(
-        '<tr><th align="left">Species</th><th align="right">n</th><th align="right">%</th></tr>',
+        make_sp_header(uid),
         make_sp_table(sp_yr, all_colors)
       )
       sprintf(
@@ -441,7 +452,42 @@ function(el, x, data) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   function colorFor(code) { return colors[code] || '#AAAAAA'; }
- 
+ // ---- click-to-sort for the species tables in pie-marker popups ------------
+  window.sortSpeciesTable = function(uid, col, type) {
+    var table = document.getElementById('tbl_' + uid);
+    if (!table) return;
+
+    // toggle direction if same column re-clicked, else pick a sensible default
+    var prevCol = table.getAttribute('data-sortcol');
+    var prevDir = table.getAttribute('data-sortdir');
+    var dir = (prevCol === String(col))
+      ? (prevDir === 'asc' ? 'desc' : 'asc')
+      : (type === 'num' ? 'desc' : 'asc');   // numbers high->low, text a->z
+    table.setAttribute('data-sortcol', col);
+    table.setAttribute('data-sortdir', dir);
+
+    var rows = Array.prototype.slice.call(table.getElementsByTagName('tr'));
+    var body = rows.filter(function(r) { return !r.getElementsByTagName('th').length; });
+    if (!body.length) return;
+
+    body.sort(function(a, b) {
+      var av = a.getElementsByTagName('td')[col];
+      var bv = b.getElementsByTagName('td')[col];
+      av = av ? (av.textContent || av.innerText || '') : '';
+      bv = bv ? (bv.textContent || bv.innerText || '') : '';
+      var cmp;
+      if (type === 'num') {
+        cmp = parseFloat(av.replace('%','')) - parseFloat(bv.replace('%',''));
+      } else {
+        av = av.toUpperCase(); bv = bv.toUpperCase();
+        cmp = av < bv ? -1 : (av > bv ? 1 : 0);
+      }
+      return dir === 'asc' ? cmp : -cmp;
+    });
+
+    var parent = body[0].parentNode;         // the <tbody> the browser inserted
+    body.forEach(function(r) { parent.appendChild(r); });
+  };
   // Same row order as the tabbed popups: 4-letter codes, other text, then
   // codes starting with a digit; alphabetical within each group.
   function tier(code) {
@@ -601,7 +647,6 @@ function(el, x, data) {
   )
   
   m_ok <- m_ok %>% addControl(legend_html, position = "bottomright")
-
 ```
 
 ```{r}
