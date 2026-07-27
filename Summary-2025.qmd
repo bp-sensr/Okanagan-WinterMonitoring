@@ -157,17 +157,24 @@ exclude_ids <- c("Noise", "NoID", "NOISE", "NOID", "")
 species_by_site_year <- OK %>%
   filter(!Species.Code %in% exclude_ids,
          !is.na(Species.Code)) %>%
-  mutate (SYear = as.character(SampleYear),
-          # For pie charts only: collapse couplets and group codes into Other
-          species_pie = case_when(
-            nchar(Species.Code) == 8                               ~ "Other",
-            toupper(Species.Code) %in% c("HILO", "HIF", "LOF")    ~ "Other",
-            !is.na(Bat.Species.Group.Code) &
-              Bat.Species.Group.Code != ""                         ~ "Other",
-            .default = Species.Code
-          ),
-          # For tables: keep everything as-is
-          species_table = Species.Code
+  mutate(SYear = as.character(SampleYear),
+         # For pie charts: couplets (e.g. EPFULANO) now stay as themselves so
+         # they can be drawn as striped slices. Only group codes / HILO-HIF-LOF
+         # still collapse into "Other".
+         species_pie = case_when(
+           toupper(Species.Code) %in% c("HILO", "HIF", "LOF")    ~ "Other",
+           # Couplets/multiplets (>= 8 letters, e.g. EPFULANO) stay as themselves
+           # so they can be drawn as striped slices -- even when a Bat Species
+           # Group Code is populated on the row (which would otherwise collapse
+           # them into "Other" via the rule below).
+           nchar(Species.Code) >= 8 &
+             grepl("^([A-Za-z]{4})+$", Species.Code)             ~ Species.Code,
+           !is.na(Bat.Species.Group.Code) &
+             Bat.Species.Group.Code != ""                         ~ "Other",
+           .default = Species.Code
+         ),
+         # For tables: keep everything as-is
+         species_table = Species.Code
   ) %>%
   group_by(Sample.Station.Label, Longitude..DD., Latitude..DD., SYear, species_pie, species_table) %>%
   summarise(n = sum(Count), .groups = "drop")
@@ -180,47 +187,99 @@ map_data <- species_by_site_year %>%
   filter(!is.na(lat))
 
 # ── 3. SVG pie helper ─────────────────────────────────────────────────────────
-make_pie_svg <- function(values, colors, size = 70) {
+# Couplet slices (EPFULANO, MYCAMYYU, MYCIMYLUMYVO, ...) are filled with a
+# diagonal stripe pattern built from the colours of their constituent species.
+make_pie_svg <- function(values, colors, labels = NULL, color_lookup = NULL,
+                         size = 70, uid = "pie") {
   total <- sum(values)
   if (total == 0) return(NULL)
+  if (is.null(labels))       labels       <- rep("", length(values))
+  if (is.null(color_lookup)) color_lookup <- character(0)
   fracs  <- values / total
   angles <- cumsum(c(0, fracs)) * 2 * pi
   r <- size / 2 - 2
-  slices <- purrr::map2_chr(seq_along(values), colors, function(i, col) {
-    a0 <- angles[i]; a1 <- angles[i + 1]
-    if (abs(a1 - a0) >= 2 * pi - 1e-6) {
-      sprintf('<circle cx="%s" cy="%s" r="%s" fill="%s"/>',
-              size/2, size/2, r, col)
+  
+  esc_attr <- function(s) {
+    s <- gsub("&", "&amp;",  s, fixed = TRUE)
+    s <- gsub('"', "&quot;", s, fixed = TRUE)
+    s <- gsub("<", "&lt;",   s, fixed = TRUE)
+    s <- gsub(">", "&gt;",   s, fixed = TRUE)
+    s
+  }
+  
+  # A code is a couplet/multiplet if it is >= 8 chars, a multiple of 4, and
+  # every 4-char chunk is all letters (e.g. EPFULANO -> EPFU, LANO).
+  couplet_parts <- function(code) {
+    if (is.na(code) || nchar(code) < 8 || nchar(code) %% 4 != 0) return(NULL)
+    starts <- seq(1, nchar(code), by = 4)
+    parts  <- substring(code, starts, starts + 3)
+    if (!all(grepl("^[A-Za-z]{4}$", parts))) return(NULL)
+    parts
+  }
+  
+  defs  <- character(0)
+  fills <- character(length(values))
+  for (i in seq_along(values)) {
+    parts <- couplet_parts(labels[i])
+    if (!is.null(parts)) {
+      cols <- vapply(toupper(parts), function(p)
+        if (p %in% names(color_lookup)) color_lookup[[p]] else "#AAAAAA",
+        character(1))
+      pid <- sprintf("stripe_%s_%d", uid, i)
+      sw  <- 7                       # stripe width (px)
+      pw  <- sw * length(cols)       # one full colour cycle
+      rects <- paste(vapply(seq_along(cols), function(k) sprintf(
+        '<rect x="%s" y="0" width="%s" height="%s" fill="%s"/>',
+        (k - 1) * sw, sw, size * 2, cols[k]), character(1)), collapse = "")
+      defs <- c(defs, sprintf(
+        '<pattern id="%s" patternUnits="userSpaceOnUse" width="%s" height="%s" patternTransform="rotate(45)">%s</pattern>',
+        pid, pw, size * 2, rects))
+      fills[i] <- sprintf("url(#%s)", pid)
     } else {
-      x0 <- size/2 + r*sin(a0); y0 <- size/2 - r*cos(a0)
-      x1 <- size/2 + r*sin(a1); y1 <- size/2 - r*cos(a1)
-      large <- if ((a1 - a0) > pi) 1L else 0L
-      sprintf('<path d="M %s %s L %s %s A %s %s 0 %s 1 %s %s Z" fill="%s" stroke="white" stroke-width="1"/>',
-              size/2, size/2, x0, y0, r, r, large, x1, y1, col)
+      fills[i] <- colors[i]
     }
-  })
-  svg <- sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s">%s</svg>',
-                 size, size, paste(slices, collapse = ""))
-  paste0("data:image/svg+xml;base64,", base64enc::base64encode(charToRaw(svg)))
+  }
+  
+  slices <- purrr::pmap_chr(
+    list(i = seq_along(values), fl = fills, lab = labels, val = values, fr = fracs),
+    function(i, fl, lab, val, fr) {
+      dl <- if (nzchar(lab))
+        sprintf(' data-label="%s: %s (%s%%)"', esc_attr(lab), val, round(fr * 100, 1)) else ''
+      a0 <- angles[i]; a1 <- angles[i + 1]
+      if (abs(a1 - a0) >= 2 * pi - 1e-6) {
+        sprintf('<circle cx="%s" cy="%s" r="%s" fill="%s"%s/>',
+                size/2, size/2, r, fl, dl)
+      } else {
+        x0 <- size/2 + r*sin(a0); y0 <- size/2 - r*cos(a0)
+        x1 <- size/2 + r*sin(a1); y1 <- size/2 - r*cos(a1)
+        large <- if ((a1 - a0) > pi) 1L else 0L
+        sprintf('<path d="M %s %s L %s %s A %s %s 0 %s 1 %s %s Z" fill="%s" stroke="white" stroke-width="1"%s/>',
+                size/2, size/2, x0, y0, r, r, large, x1, y1, fl, dl)
+      }
+    }
+  )
+  defs_block <- if (length(defs)) sprintf("<defs>%s</defs>", paste(defs, collapse = "")) else ""
+  sprintf('<svg xmlns="http://www.w3.org/2000/svg" width="%s" height="%s">%s%s</svg>',
+          size, size, defs_block, paste(slices, collapse = ""))
 }
 
 # ── 4. Colour palette ─────────────────────────────────────────────────────────
 sp_colors <- c(
   "ANPA"  = "#8C564B",   # 1.5%   brown
   "COTO"  = "#17BECF",   # 0.5%   cyan
-  "EPFU"  = "#F28E2B",   # 4.7%   orange     
+  "EPFU"  = "#F28E2B",   # 4.7%   orange
   "EUMA"  = "#2F4B7C",   # 0.9%   navy
   "LABO"  = "#4E6E58",   # 3 obs  deep sage
   "LACI"  = "#FF9DA7",   # 6 obs  pale pink
-  "LANO"  = "#E15759",   # 13.9%  red        
+  "LANO"  = "#E15759",   # 13.9%  red
   "MYCA"  = "#8E4FA8",   # 4.9%   purple
   "MYCI"  = "#1F77B4",   # 16.8%  blue
-  "MYEV"  = "#A0CBE8",   # 0.1%   pale blue 
-  "MYLU"  = "#59A14F",   # 2.0%   green      
+  "MYEV"  = "#A0CBE8",   # 0.1%   pale blue
+  "MYLU"  = "#59A14F",   # 2.0%   green
   "MYTH"  = "#A6761D",   # 0.4%   ochre
-  "MYVO"  = "#C9A0DC",   # 0.2%   lilac      
-  "MYYU"  = "#76B7B2",   # 2.4%   teal       
-  "PAHE"  = "#EDC948",   # 0.1%   yellow     
+  "MYVO"  = "#C9A0DC",   # 0.2%   lilac
+  "MYYU"  = "#76B7B2",   # 2.4%   teal
+  "PAHE"  = "#EDC948",   # 0.1%   yellow
   "Other" = "#AAAAAA"
 )
 
@@ -251,8 +310,6 @@ make_sp_header <- function(uid) {
 # ── 5b. make_sp_table: species code and numbers only, no colour swatch ────────
 # Row order: 4-letter codes first, then any other text codes, then codes that
 # begin with a digit. Alphabetical within each group.
-# The pie_colors argument is kept so the existing call sites don't change; it
-# is simply unused now.
 sp_code_tier <- function(x) {
   dplyr::case_when(
     grepl("^[0-9]", x) ~ 3L,   # numeric-leading codes go last
@@ -288,9 +345,6 @@ site_list <- map_data %>%
   )
 
 # ── 6b. Colour lookup for the FILTERED view only ──────────────────────────────
-# The pies and popup tables keep their own per-site fallback logic (section 7),
-# so nothing about the original map changes. This table exists because the
-# filtered circles need one colour per species across the whole map.
 all_species_codes <- sort(unique(species_by_site_year$species_table))
 unknown_codes     <- setdiff(all_species_codes, names(sp_colors))
 fallback_codes    <- if (length(unknown_codes)) {
@@ -300,6 +354,10 @@ fallback_codes    <- if (length(unknown_codes)) {
 species_colors_all <- c(sp_colors, fallback_codes)
 
 # ── 7. Assemble one payload per site (no markers added in R) ──────────────────
+# Slice rule: any species that is >= 2% of the site's total is drawn as its own
+# slice; everything below 2% (plus the pre-existing "Other") is pooled into Other.
+pie_min_share <- 0.02
+
 sites_payload  <- vector("list", nrow(site_list))
 all_pie_colors <- c()
 
@@ -310,40 +368,49 @@ for (i in seq_len(nrow(site_list))) {
   
   if (nrow(sp) == 0 || sum(sp$n) == 0) next
   
-  # -- Pie chart: species_pie (Other-collapsed), all years ---------------------
+  # -- Pie chart categories, all years -----------------------------------------
   sp_pie_all <- sp %>%
     group_by(species_pie) %>%
     summarise(n = sum(n), .groups = "drop") %>%
     arrange(desc(n)) %>%
     rename(species = species_pie)
   
-  top5 <- sp_pie_all$species[1:min(5, nrow(sp_pie_all))]
+  site_total_pie <- sum(sp_pie_all$n)
+  keep_species <- sp_pie_all %>%
+    filter(species != "Other", n / site_total_pie >= pie_min_share) %>%
+    pull(species)
   
   sp_pie <- sp_pie_all %>%
-    mutate(species = if_else(species %in% top5, species, "Other")) %>%
+    mutate(species = if_else(species %in% keep_species, species, "Other")) %>%
     group_by(species) %>%
     summarise(n = sum(n), .groups = "drop") %>%
     arrange(desc(n))
   
-  # -- Pie colours: your original per-site fallback, untouched ----------------
-  unknown_sp    <- setdiff(sp_pie$species, names(sp_colors))
-  fallback_cols <- setNames(
-    colorRampPalette(RColorBrewer::brewer.pal(8, "Dark2"))(max(length(unknown_sp), 1)),
-    unknown_sp)
-  pie_colors <- setNames(c(sp_colors, fallback_cols)[sp_pie$species], sp_pie$species)
+  # -- Pie colours: use the SINGLE global map (species_colors_all) so an unknown
+  #    code (e.g. Myotis, 40KMyo) gets the SAME colour at every site. Couplets
+  #    are striped, so the solid colour here is only a placeholder that
+  #    make_pie_svg ignores. -----------------------------------------------------
+  pie_colors <- setNames(
+    vapply(sp_pie$species, function(s)
+      if (s %in% names(species_colors_all)) species_colors_all[[s]] else "#AAAAAA",
+      character(1)),
+    sp_pie$species)
   
-  # -- Table colours: raw species codes, your original per-site fallback ------
+  # -- Table colours: raw species codes, per-site fallback ---------------------
   all_sp       <- unique(sp$species_table)
   unknown_all  <- setdiff(all_sp, names(sp_colors))
-  fallback_all <- setNames(
-    colorRampPalette(RColorBrewer::brewer.pal(8, "Dark2"))(max(length(unknown_all), 1)),
-    unknown_all)
+  fallback_all <- if (length(unknown_all)) {
+    setNames(colorRampPalette(RColorBrewer::brewer.pal(8, "Dark2"))(length(unknown_all)),
+             unknown_all)
+  } else character(0)
   all_colors <- c(sp_colors, fallback_all)
   
   all_pie_colors <- c(all_pie_colors, pie_colors)
   
-  uri <- make_pie_svg(sp_pie$n, pie_colors[sp_pie$species])
-  uid <- gsub("[^a-zA-Z0-9]", "_", row$site_name)
+  uid     <- gsub("[^a-zA-Z0-9]", "_", row$site_name)
+  pie_svg <- make_pie_svg(sp_pie$n, pie_colors[sp_pie$species],
+                          labels = sp_pie$species,
+                          color_lookup = species_colors_all, uid = uid)
   
   # -- All-years table: raw species codes --------------------------------------
   sp_all_table <- sp %>%
@@ -351,7 +418,6 @@ for (i in seq_len(nrow(site_list))) {
     summarise(n = sum(n), .groups = "drop") %>%
     rename(species = species_table)
   
-  # NOTE: header used to read "%%" because paste0 does no sprintf substitution.
   all_table_html <- paste0(
     make_sp_header(uid),
     make_sp_table(sp_all_table, all_colors)
@@ -403,7 +469,7 @@ for (i in seq_len(nrow(site_list))) {
     row$site_name, year_button_list, uid, row$total, uid, table_style, all_table_html
   )
   
-  # -- NEW: species x year counts, for the filtered popups ---------------------
+  # -- species x year counts, for the filtered popups --------------------------
   sp_years <- sp %>%
     group_by(species_table, SYear) %>%
     summarise(n = sum(n), .groups = "drop") %>%
@@ -424,7 +490,7 @@ for (i in seq_len(nrow(site_list))) {
     lat     = row$lat,
     lon     = row$lon,
     total   = row$total,
-    icon    = uri,
+    icon    = pie_svg,
     popup   = popup,
     species = species_list
   )
@@ -432,7 +498,7 @@ for (i in seq_len(nrow(site_list))) {
 
 sites_payload <- Filter(Negate(is.null), sites_payload)
 
-# ── 8. JS: search control + marker layer ──────────────────────────────────────
+# ── 8. JS: search control + marker layer + hover tooltip ──────────────────────
 search_js <- r"(
 function(el, x, data) {
   var map    = this;
@@ -440,24 +506,65 @@ function(el, x, data) {
   var colors = data.colors;
   var codes  = data.allSpecies;
   var ZOOM_TO_RESULTS = true;   // set false to keep the current view on search
- 
+
   var home = L.latLngBounds(
     [data.home.lat1, data.home.lng1],
     [data.home.lat2, data.home.lng2]
   );
- 
+
   var layer = L.layerGroup().addTo(map);
- 
+
+  if (!document.getElementById('pie-marker-style')) {
+    var _st = document.createElement('style');
+    _st.id = 'pie-marker-style';
+    _st.textContent = '.pie-marker{background:transparent;border:none;cursor:pointer;}' +
+                      '.pie-marker svg{display:block;}';
+    document.head.appendChild(_st);
+  }
+
+  // ---- reliable hover tooltip for pie slices (native <title> is flaky) ------
+  if (!window._pieTip) {
+    var _tip = document.createElement('div');
+    _tip.style.cssText = 'position:fixed;z-index:10000;pointer-events:none;' +
+      'background:rgba(0,0,0,.82);color:#fff;padding:3px 7px;border-radius:4px;' +
+      'font:12px sans-serif;white-space:nowrap;display:none;';
+    document.body.appendChild(_tip);
+    window._pieTip = _tip;
+  }
+  var pieTip = window._pieTip;
+
+  if (!el._pieTipBound) {
+    el._pieTipBound = true;
+    el.addEventListener('mouseover', function(e) {
+      var t = e.target;
+      var lab = (t && t.getAttribute) ? t.getAttribute('data-label') : null;
+      if (lab) {
+        pieTip.textContent = lab;
+        pieTip.style.left = (e.clientX + 12) + 'px';
+        pieTip.style.top  = (e.clientY + 12) + 'px';
+        pieTip.style.display = 'block';
+      } else {
+        pieTip.style.display = 'none';
+      }
+    });
+    el.addEventListener('mousemove', function(e) {
+      if (pieTip.style.display === 'block') {
+        pieTip.style.left = (e.clientX + 12) + 'px';
+        pieTip.style.top  = (e.clientY + 12) + 'px';
+      }
+    });
+  }
+
   function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   function colorFor(code) { return colors[code] || '#AAAAAA'; }
- // ---- click-to-sort for the species tables in pie-marker popups ------------
+
+  // ---- click-to-sort for the species tables in pie-marker popups ------------
   window.sortSpeciesTable = function(uid, col, type) {
     var table = document.getElementById('tbl_' + uid);
     if (!table) return;
 
-    // toggle direction if same column re-clicked, else pick a sensible default
     var prevCol = table.getAttribute('data-sortcol');
     var prevDir = table.getAttribute('data-sortdir');
     var dir = (prevCol === String(col))
@@ -485,9 +592,10 @@ function(el, x, data) {
       return dir === 'asc' ? cmp : -cmp;
     });
 
-    var parent = body[0].parentNode;         // the <tbody> the browser inserted
+    var parent = body[0].parentNode;
     body.forEach(function(r) { parent.appendChild(r); });
   };
+
   // Same row order as the tabbed popups: 4-letter codes, other text, then
   // codes starting with a digit; alphabetical within each group.
   function tier(code) {
@@ -500,39 +608,43 @@ function(el, x, data) {
     var ua = a.code.toUpperCase(), ub = b.code.toUpperCase();
     return ua < ub ? -1 : (ua > ub ? 1 : 0);
   }
- 
-  // ---- unfiltered view: original pie icons + original popups ----------------
+
+  // ---- unfiltered view: pie icons + tabbed popups ---------------------------
   function showAll(refit) {
     layer.clearLayers();
     if (refit && ZOOM_TO_RESULTS) map.fitBounds(home);
     sites.forEach(function(s) {
       L.marker([s.lat, s.lon], {
-        icon: L.icon({ iconUrl: s.icon, iconSize: [70, 70], iconAnchor: [35, 35] })
+        icon: L.divIcon({
+          html: s.icon,
+          className: 'pie-marker',
+          iconSize: [70, 70],
+          iconAnchor: [35, 35]
+        })
       })
       .bindPopup(s.popup, { maxWidth: 320 })
-      .bindTooltip(s.site)
       .addTo(layer);
     });
     setStatus(sites.length + ' sites, all species');
   }
- 
+
   // ---- filtered view: one circle per site, years-only popup -----------------
   function showFiltered(q) {
     layer.clearLayers();
     var pts = [], nSites = 0, grand = 0;
- 
+
     sites.forEach(function(s) {
       var hits = s.species.filter(function(sp) {
         return sp.code.toUpperCase().indexOf(q) !== -1;   // use === q for exact
       });
       if (!hits.length) return;
       hits.sort(bySpeciesCode);
- 
+
       nSites++;
       var tot = hits.reduce(function(a, b) { return a + b.total; }, 0);
       grand += tot;
       pts.push([s.lat, s.lon]);
- 
+
       var html = '<div style="font-family:sans-serif;min-width:190px"><b>' +
                  esc(s.site) + '</b>';
       hits.forEach(function(sp) {
@@ -546,7 +658,7 @@ function(el, x, data) {
         html += '</table>';
       });
       html += '</div>';
- 
+
       L.circleMarker([s.lat, s.lon], {
         radius: Math.max(6, Math.min(26, 3.5 * Math.sqrt(tot))),
         color: '#ffffff', weight: 1.5,
@@ -556,7 +668,7 @@ function(el, x, data) {
       .bindTooltip(s.site + ' \u2014 ' + tot)
       .addTo(layer);
     });
- 
+
     if (nSites === 0) {
       setStatus('No sites recorded ' + esc(q) + '. Check the code and try again.');
     } else {
@@ -564,17 +676,17 @@ function(el, x, data) {
       if (ZOOM_TO_RESULTS) map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
     }
   }
- 
+
   function setStatus(txt) {
     var d = el.querySelector('#sp-status');
     if (d) d.innerHTML = txt;
   }
- 
+
   function run() {
     var q = (el.querySelector('#sp-search').value || '').trim().toUpperCase();
     if (q === '') { showAll(true); } else { showFiltered(q); }
   }
- 
+
   // ---- the control ----------------------------------------------------------
   var SearchCtl = L.Control.extend({
     onAdd: function() {
@@ -597,18 +709,18 @@ function(el, x, data) {
     }
   });
   map.addControl(new SearchCtl({ position: 'topright' }));
- 
+
   el.querySelector('#sp-search').addEventListener('input', run);
   el.querySelector('#sp-clear').addEventListener('click', function() {
     el.querySelector('#sp-search').value = '';
     run();
   });
- 
+
   showAll(false);   // first draw keeps the extent already set in R
 }
 )"
   
-  # -- Home extent: bounding box of the sites, with a small margin --------------
+  # -- Home extent: bounding box of the sites, with a small margin ---------------
   lat_rng <- range(vapply(sites_payload, function(s) s$lat, numeric(1)))
   lng_rng <- range(vapply(sites_payload, function(s) s$lon, numeric(1)))
   pad     <- max(diff(lat_rng), diff(lng_rng)) * 0.05
@@ -633,20 +745,7 @@ function(el, x, data) {
       )
     )
   
-  # ── 9. Legend: only the species named in sp_colors ────────────────────────────
-  # Restricted to codes that actually appear on the map, in sp_colors order.
-  legend_colors <- sp_colors[names(sp_colors) %in% names(all_pie_colors)]
-  
-  legend_html <- htmltools::tags$div(
-    style = "background:white;padding:10px 14px;border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,.3);font-family:sans-serif;font-size:12px;max-height:300px;overflow-y:auto;",
-    htmltools::tags$b("Species"),
-    htmltools::tags$hr(style = "margin:4px 0"),
-    htmltools::HTML(paste(purrr::map_chr(names(legend_colors), ~sprintf(
-      '<div style="display:flex;align-items:center;margin-bottom:3px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%%;background:%s;margin-right:6px"></span>%s</div>',
-      legend_colors[.x], .x)), collapse = ""))
-  )
-  
-  m_ok <- m_ok %>% addControl(legend_html, position = "bottomright")
+  m_ok
 ```
 
 ```{r}
