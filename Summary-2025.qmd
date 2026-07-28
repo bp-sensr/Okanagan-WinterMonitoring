@@ -144,7 +144,7 @@ n_confirmed <- nrow(confirmed_spp)
 ```
 
 ```{r}
-#| label: Prep data for map
+#| label: Prep data and create map
 #| include: false
 #| echo: false
 #| eval: true
@@ -174,9 +174,11 @@ species_by_site_year <- OK %>%
            .default = Species.Code
          ),
          # For tables: keep everything as-is
-         species_table = Species.Code
+         species_table = Species.Code,
+         # Project/source for the new project filter (NA/"" -> "Unknown")
+         Source = { s <- as.character(Source); ifelse(is.na(s) | s == "", "Unknown", s) }
   ) %>%
-  group_by(Sample.Station.Label, Longitude..DD., Latitude..DD., SYear, species_pie, species_table) %>%
+  group_by(Sample.Station.Label, Longitude..DD., Latitude..DD., SYear, species_pie, species_table, Source) %>%
   summarise(n = sum(Count), .groups = "drop")
 
 # ── 2. Build site coords ───────────────────────────────────────────────────────
@@ -264,23 +266,30 @@ make_pie_svg <- function(values, colors, labels = NULL, color_lookup = NULL,
 }
 
 # ── 4. Colour palette ─────────────────────────────────────────────────────────
+# Grouped by ECHOLOCATION CALL FREQUENCY (not detection count):
+#   - High-frequency callers (Myotis spp.) -> warm reds -> yellows
+#   - Low-frequency callers                 -> cool blues + greens
+# Within each group the hue tracks detection abundance (darkest/most saturated =
+# most detected), using the % noted in each comment.
 sp_colors <- c(
-  "ANPA"  = "#8C564B",   # 1.5%   brown
-  "COTO"  = "#17BECF",   # 0.5%   cyan
-  "EPFU"  = "#F28E2B",   # 4.7%   orange
-  "EUMA"  = "#2F4B7C",   # 0.9%   navy
-  "LABO"  = "#4E6E58",   # 3 obs  deep sage
-  "LACI"  = "#FF9DA7",   # 6 obs  pale pink
-  "LANO"  = "#E15759",   # 13.9%  red
-  "MYCA"  = "#8E4FA8",   # 4.9%   purple
-  "MYCI"  = "#1F77B4",   # 16.8%  blue
-  "MYEV"  = "#A0CBE8",   # 0.1%   pale blue
-  "MYLU"  = "#59A14F",   # 2.0%   green
-  "MYTH"  = "#A6761D",   # 0.4%   ochre
-  "MYVO"  = "#C9A0DC",   # 0.2%   lilac
-  "MYYU"  = "#76B7B2",   # 2.4%   teal
-  "PAHE"  = "#EDC948",   # 0.1%   yellow
-  "Other" = "#AAAAAA"
+  # -- high-frequency callers (Myotis spp.): reds -> yellows ------------------
+  "MYCI"  = "#B10026",   # 16.8%  dark red
+  "MYCA"  = "#E31A1C",   # 4.9%   red
+  "MYYU"  = "#FC4E2A",   # 2.4%   red-orange
+  "MYLU"  = "#FD8D3C",   # 2.0%   orange
+  "MYTH"  = "#FEB24C",   # 0.4%   light orange
+  "MYVO"  = "#FED976",   # 0.2%   yellow
+  "MYEV"  = "#FFEDA0",   # 0.1%   pale yellow
+  # -- low-frequency callers: blues + greens ----------------------------------
+  "LANO"  = "#08519C",   # 13.9%  dark blue
+  "EPFU"  = "#006D2C",   # 4.7%   dark green
+  "ANPA"  = "#2171B5",   # 1.5%   blue
+  "EUMA"  = "#238B45",   # 0.9%   green
+  "COTO"  = "#4292C6",   # 0.5%   medium blue
+  "PAHE"  = "#41AB5D",   # 0.1%   medium green
+  "LACI"  = "#6BAED6",   # 6 obs  light blue
+  "LABO"  = "#74C476",   # 3 obs  light green
+  "Other" = "#AAAAAA"    #        grey
 )
 
 # ── 5. Helper: build one HTML table body ──────────────────────────────────────
@@ -338,7 +347,7 @@ make_sp_table <- function(sp_df, pie_colors = NULL) {
 site_list <- map_data %>%
   group_by(site_name, lat, lon) %>%
   summarise(
-    sp_data = list(tibble(species_pie, species_table, n, SYear)),
+    sp_data = list(tibble(species_pie, species_table, n, SYear, Source)),
     total   = sum(n),
     years   = list(sort(unique(SYear))),
     .groups = "drop"
@@ -352,6 +361,12 @@ fallback_codes    <- if (length(unknown_codes)) {
            unknown_codes)
 } else character(0)
 species_colors_all <- c(sp_colors, fallback_codes)
+
+# -- Sources (projects) for the project filter: stable list + one colour each --
+all_sources   <- sort(unique(map_data$Source))
+source_pal    <- c("#4E79A7", "#F28E2B", "#59A14F", "#B07AA1", "#9C755F", "#EDC948")
+source_colors <- setNames(source_pal[((seq_along(all_sources) - 1) %% length(source_pal)) + 1],
+                          all_sources)
 
 # ── 7. Assemble one payload per site (no markers added in R) ──────────────────
 # Slice rule: any species that is >= 2% of the site's total is drawn as its own
@@ -485,6 +500,22 @@ for (i in seq_len(nrow(site_list))) {
     )
   ))
   
+  # -- per-source (project) species breakdown, for the project filter ----------
+  src_species <- sp %>%
+    group_by(Source, species_table) %>%
+    summarise(n = sum(n), .groups = "drop") %>%
+    arrange(Source, desc(n))
+  
+  sources_list <- unname(purrr::imap(
+    split(src_species, src_species$Source),
+    function(d, nm) list(
+      name   = nm,
+      total  = sum(d$n),
+      codes  = I(as.character(d$species_table)),
+      counts = I(as.integer(d$n))
+    )
+  ))
+  
   sites_payload[[i]] <- list(
     site    = row$site_name,
     lat     = row$lat,
@@ -492,7 +523,8 @@ for (i in seq_len(nrow(site_list))) {
     total   = row$total,
     icon    = pie_svg,
     popup   = popup,
-    species = species_list
+    species = species_list,
+    sources = sources_list
   )
 }
 
@@ -505,6 +537,9 @@ function(el, x, data) {
   var sites  = data.sites;
   var colors = data.colors;
   var codes  = data.allSpecies;
+  var sourceColors = data.sourceColors;
+  var sourceList   = data.allSources;
+  var mode   = 'species';        // 'species' | 'project'
   var ZOOM_TO_RESULTS = true;   // set false to keep the current view on search
 
   var home = L.latLngBounds(
@@ -559,6 +594,7 @@ function(el, x, data) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   function colorFor(code) { return colors[code] || '#AAAAAA'; }
+  function colorForSource(name) { return sourceColors[name] || '#4E79A7'; }
 
   // ---- click-to-sort for the species tables in pie-marker popups ------------
   window.sortSpeciesTable = function(uid, col, type) {
@@ -628,8 +664,8 @@ function(el, x, data) {
     setStatus(sites.length + ' sites, all species');
   }
 
-  // ---- filtered view: one circle per site, years-only popup -----------------
-  function showFiltered(q) {
+  // ---- filtered view: SPECIES — one circle per site, years-only popup -------
+  function showFilteredSpecies(q) {
     layer.clearLayers();
     var pts = [], nSites = 0, grand = 0;
 
@@ -677,14 +713,80 @@ function(el, x, data) {
     }
   }
 
+  // ---- filtered view: PROJECT — one circle per site, species popup ----------
+  function showFilteredSource(name) {
+    layer.clearLayers();
+    var pts = [], nSites = 0, grand = 0;
+
+    sites.forEach(function(s) {
+      var src = (s.sources || []).filter(function(x) { return x.name === name; })[0];
+      if (!src) return;
+
+      nSites++;
+      grand += src.total;
+      pts.push([s.lat, s.lon]);
+
+      var html = '<div style="font-family:sans-serif;min-width:190px"><b>' +
+                 esc(s.site) + '</b>' +
+                 '<hr style="margin:6px 0"/>' +
+                 '<b>' + esc(name) + ' &mdash; ' + src.total + ' detections</b>' +
+                 '<table style="width:100%;margin-top:4px">' +
+                 '<tr><th align="left">Species</th><th align="right">n</th></tr>';
+      src.codes.forEach(function(c, i) {
+        html += '<tr><td>' + esc(c) + '</td><td align="right">' + src.counts[i] + '</td></tr>';
+      });
+      html += '</table></div>';
+
+      L.circleMarker([s.lat, s.lon], {
+        radius: Math.max(6, Math.min(26, 3.5 * Math.sqrt(src.total))),
+        color: '#ffffff', weight: 1.5,
+        fillColor: colorForSource(name), fillOpacity: 0.85
+      })
+      .bindPopup(html, { maxWidth: 320 })
+      .bindTooltip(s.site + ' \u2014 ' + src.total)
+      .addTo(layer);
+    });
+
+    if (nSites === 0) {
+      setStatus('No sites recorded for ' + esc(name) + '.');
+    } else {
+      setStatus(nSites + ' of ' + sites.length + ' sites, ' + grand + ' detections');
+      if (ZOOM_TO_RESULTS) map.fitBounds(L.latLngBounds(pts), { padding: [40, 40] });
+    }
+  }
+
   function setStatus(txt) {
     var d = el.querySelector('#sp-status');
     if (d) d.innerHTML = txt;
   }
 
   function run() {
-    var q = (el.querySelector('#sp-search').value || '').trim().toUpperCase();
-    if (q === '') { showAll(true); } else { showFiltered(q); }
+    if (mode === 'species') {
+      var q = (el.querySelector('#sp-search').value || '').trim().toUpperCase();
+      if (q === '') { showAll(true); } else { showFilteredSpecies(q); }
+    } else {
+      var name = el.querySelector('#src-select').value || '';
+      if (name === '') { showAll(true); } else { showFilteredSource(name); }
+    }
+  }
+
+  function setMode(m) {
+    mode = m;
+    var bS = el.querySelector('#mode-species'), bP = el.querySelector('#mode-project');
+    var pS = el.querySelector('#panel-species'), pP = el.querySelector('#panel-project');
+    // reset both inputs so each toggle starts from "show all"
+    el.querySelector('#sp-search').value = '';
+    el.querySelector('#src-select').value = '';
+    if (m === 'species') {
+      bS.style.background = '#4E79A7'; bS.style.color = 'white';
+      bP.style.background = '#e0e0e0'; bP.style.color = '#333';
+      pS.style.display = ''; pP.style.display = 'none';
+    } else {
+      bP.style.background = '#4E79A7'; bP.style.color = 'white';
+      bS.style.background = '#e0e0e0'; bS.style.color = '#333';
+      pP.style.display = ''; pS.style.display = 'none';
+    }
+    run();
   }
 
   // ---- the control ----------------------------------------------------------
@@ -693,16 +795,32 @@ function(el, x, data) {
       var div = L.DomUtil.create('div', '');
       div.innerHTML =
         '<div style="background:white;padding:9px 12px;border-radius:6px;' +
-        'box-shadow:0 1px 5px rgba(0,0,0,.3);font-family:sans-serif;font-size:12px">' +
-        '<b>Filter by species</b><hr style="margin:4px 0"/>' +
-        '<input id="sp-search" list="sp-codes" autocomplete="off" placeholder="e.g. MYLU" ' +
-        'style="width:135px;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px"/>' +
-        '<button id="sp-clear" style="margin-left:4px;padding:3px 8px;border:1px solid #ccc;' +
-        'border-radius:4px;background:#e0e0e0;color:#333;cursor:pointer;font-size:11px">Show all</button>' +
-        '<datalist id="sp-codes">' +
-        codes.map(function(c) { return '<option value="' + c + '">'; }).join('') +
-        '</datalist>' +
-        '<div id="sp-status" style="margin-top:6px;color:#555"></div></div>';
+        'box-shadow:0 1px 5px rgba(0,0,0,.3);font-family:sans-serif;font-size:12px;min-width:190px">' +
+          '<div style="display:flex;gap:4px;margin-bottom:7px">' +
+            '<button id="mode-species" style="flex:1;padding:4px 6px;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:11px;background:#4E79A7;color:white">Species</button>' +
+            '<button id="mode-project" style="flex:1;padding:4px 6px;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:11px;background:#e0e0e0;color:#333">Project</button>' +
+          '</div>' +
+          '<div id="panel-species">' +
+            '<b>Filter by species</b><hr style="margin:4px 0"/>' +
+            '<input id="sp-search" list="sp-codes" autocomplete="off" placeholder="e.g. MYLU" ' +
+            'style="width:120px;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px"/>' +
+            '<button id="sp-clear" style="margin-left:4px;padding:3px 8px;border:1px solid #ccc;' +
+            'border-radius:4px;background:#e0e0e0;color:#333;cursor:pointer;font-size:11px">Show all</button>' +
+            '<datalist id="sp-codes">' +
+            codes.map(function(c) { return '<option value="' + c + '">'; }).join('') +
+            '</datalist>' +
+          '</div>' +
+          '<div id="panel-project" style="display:none">' +
+            '<b>Filter by project</b><hr style="margin:4px 0"/>' +
+            '<select id="src-select" style="width:130px;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px">' +
+            '<option value="">Choose\u2026</option>' +
+            sourceList.map(function(s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('') +
+            '</select>' +
+            '<button id="src-clear" style="margin-left:4px;padding:3px 8px;border:1px solid #ccc;' +
+            'border-radius:4px;background:#e0e0e0;color:#333;cursor:pointer;font-size:11px">Show all</button>' +
+          '</div>' +
+          '<div id="sp-status" style="margin-top:6px;color:#555"></div>' +
+        '</div>';
       L.DomEvent.disableClickPropagation(div);
       L.DomEvent.disableScrollPropagation(div);
       return div;
@@ -710,9 +828,16 @@ function(el, x, data) {
   });
   map.addControl(new SearchCtl({ position: 'topright' }));
 
+  el.querySelector('#mode-species').addEventListener('click', function() { setMode('species'); });
+  el.querySelector('#mode-project').addEventListener('click', function() { setMode('project'); });
   el.querySelector('#sp-search').addEventListener('input', run);
   el.querySelector('#sp-clear').addEventListener('click', function() {
     el.querySelector('#sp-search').value = '';
+    run();
+  });
+  el.querySelector('#src-select').addEventListener('change', run);
+  el.querySelector('#src-clear').addEventListener('click', function() {
+    el.querySelector('#src-select').value = '';
     run();
   });
 
@@ -738,10 +863,12 @@ function(el, x, data) {
     htmlwidgets::onRender(
       search_js,
       data = list(
-        sites      = sites_payload,
-        colors     = as.list(species_colors_all),
-        allSpecies = I(all_species_codes),
-        home       = home_bounds
+        sites        = sites_payload,
+        colors       = as.list(species_colors_all),
+        allSpecies   = I(all_species_codes),
+        sourceColors = as.list(source_colors),
+        allSources   = I(all_sources),
+        home         = home_bounds
       )
     )
   
@@ -908,7 +1035,7 @@ In total there have been `r nrow(OK)` bat recordings recorded over the length of
 #| warning: false
 #| message: false
 #| include: true
-#| fig-cap: Proportion of species bat passes at each site.
+#| fig-cap: "Proportion of species bat passes at each site. Only Species or species couplets that identified at lesat 5% of the total tags appear on map"
 #| label: fig-monitoring-locations
 
 if (knitr::pandoc_to("html")){
