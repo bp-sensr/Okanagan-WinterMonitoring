@@ -17,7 +17,7 @@ format:
     tbl-pos: "H"
     toc: true
     toc-depth: 3
-    toc-colour: black
+    toccolor: black
     number-sections: true
     colorlinks: true
     geometry:
@@ -112,7 +112,7 @@ sites_per_syear <- OK %>%
   summarise(n_sites = n_distinct(Sample.Station.Label), .groups = "drop")
 
 top_sampled_yr     <- sites_per_syear %>% slice_max(n_sites, n = 1, with_ties = FALSE)
-top_sampled_year   <- top_sampled_yr$Year
+top_sampled_year   <- top_sampled_yr$SampleYear
 top_sampled_nsites <- top_sampled_yr$n_sites
 
 # ------------------------- Species summaries ------------------------
@@ -871,8 +871,41 @@ function(el, x, data) {
         home         = home_bounds
       )
     )
+# ── 9. Legend: single-species codes + Myotis & 40KMyo, two columns ────────────
+  col_lookup <- if (exists("species_colors_all")) species_colors_all else sp_colors
   
-  m_ok
+  # Single-species palette codes, split by echolocation frequency
+  palette_codes <- setdiff(names(sp_colors), "Other")
+  high_codes    <- palette_codes[ grepl("^MY", palette_codes)]   # Myotis  = high freq
+  low_codes     <- palette_codes[!grepl("^MY", palette_codes)]   # the rest = low freq
+  low_codes     <- palette_codes[!grepl("^MY", palette_codes)]   # the rest = low freq
+  
+  # Order the low-frequency column blues-first, then greens (by hue)
+  low_hsv   <- grDevices::rgb2hsv(grDevices::col2rgb(col_lookup[low_codes]))
+  low_codes <- low_codes[order(low_hsv["h", ], decreasing = TRUE)]
+  
+  # Extra group tags to include, appended to the Myotis (high-freq) column.
+  # Names must match the data EXACTLY: "Myotis" (not "MYotis") and "40KMyo".
+  extra_tags <- c("Myotis", "40KMyo")
+  high_codes <- c(high_codes, extra_tags[extra_tags %in% names(col_lookup)])
+  
+  legend_row <- function(code) sprintf(
+    '<div style="display:flex;align-items:center;margin-bottom:3px"><span style="display:inline-block;width:12px;height:12px;border-radius:50%%;background:%s;margin-right:6px"></span>%s</div>',
+    col_lookup[[code]], code)
+  
+  legend_col <- function(codes) paste(vapply(codes, legend_row, character(1)), collapse = "")
+  
+  legend_html <- htmltools::HTML(sprintf(
+    '<div style="background:white;padding:10px 14px;border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,.3);font-family:sans-serif;font-size:12px">
+     <b>Species</b><hr style="margin:4px 0"/>
+     <div style="display:flex;gap:18px">
+       <div>%s</div><div>%s</div>
+     </div>
+   </div>',
+   legend_col(high_codes), legend_col(low_codes)
+  ))
+  
+  m_ok <- m_ok %>% addControl(legend_html, position = "bottomright")
 ```
 
 ```{r}
@@ -972,37 +1005,33 @@ Biodiversity Pathways respectfully acknowledges that our work takes place on Tre
 
 # Background
 
-There is growing evidence that the majority of BC bat species overwinter in the province, and several are occasionally active in winter across British Columbia. Winter acoustic activity has been documented across the province in cave and non-cave habitats (BC BatCaver Program, Lausen 2020), at cliff roosts suspected to be hibernacula in the Peace region (WLRS unpublished data), in coastal forests (WLRS unpublished data), and at five parks in southern BC (BC parks unpublished data). There are likely many year-round acoustic monitoring efforts not mentioned here.
+Growing evidence indicates that most BC bat species overwinter within the province, with several remaining occasionally active through the winter. This activity has been documented acoustically in both cave and non-cave habitats [@lausen2018], at cliff roosts suspected to be hibernacula in the Peace region (WLRS unpublished data), in coastal forests (WLRS unpublished data), and at five parks in southern BC (BC Parks unpublished data). Further year-round monitoring efforts likely exist beyond those noted here.
 
-While activity has been recorded at diverse habitats such as cliffs, old forests, and waterbodies, little is known about non-cave microsites used by western bats in these habitats in winter (Nagorsen et al. 1993; Weller et al. 2018). Documented non-cave roosts include talus/tree roosts in southeast Alaska (Blejwas et al. 2021), tree cavities in southeastern BC (de Frietas MSc 2023), a potential talus slope in SE BC (Lausen and Hill 2021) and anthropogenic sites including under siding and trim of houses in coastal BC (BC Community Bat Program unpublished data).
+Although this activity spans diverse habitats (cliffs, old forests, and waterbodies) little is known about the specific non-cave microsites western bats use in winter [@nagorsen1994; @weller2018]. Documented non-cave roosts include talus and tree roosts in southeast Alaska [@blejwas2021], tree cavities in southeastern BC (deFreitas 2023), a possible talus slope in the same region (Lausen and Hill 2021), and anthropogenic sites such as the siding and trim of houses on the coast (BC Community Bat Program unpublished data). Apart from several large hibernacula in southern BC mines, few hibernacula have been identified, suggesting that most of the region's bats hibernate singly or in small, scattered groups. This mirrors findings from the western US, where wintering Myotis were found singly in 45% of records or in small groups with a median of two, and Townsend's big-eared bats in slightly larger groups with a median of three [@weller2018] .
 
-Apart from several large hibernacula known from mines in southern BC, the lack of known hibernacula suggests that the majority of southern BC’s bats are believed to hibernate singly or in small groups scattered across the landscape. This would be similar to findings from the western US, where *Myotis* bats in winter are found singly (45 % of winter records) or in small groups, with a median group size of 2 bats, while Townsend’s Big-eared bats were in slightly larger groups with median 3 (Weller et al. 2018).
+Understanding how bats use winter habitat has practical value. It can inform the management of recreational and industrial activities, and clarifying how bats use non-cave features such as rock crevices, talus, and trees may improve understanding of how *Pseudogymnoascus destructans* (the fungus that causes white-nose syndrome) spreads in BC, as well as potential treatment options.
 
-In the Okanagan region, multi-year acoustic monitoring by BC Parks (Paterson 2025) has identified the presence of ten species in late fall/early winter and intermittently throughout the winter period, suggesting hibernation in the vicinity of acoustic monitoring stations. The habitats that have been monitored are all rocky outcrops and canyons. While acoustics have confirmed bat presence in these areas, confirming winter roosting/hibernation in these features and identifying the microsites used in these landscapes will increase understanding of hibernation ecology.
+Three studies in the Okanagan region, spanning the winter of 2011/12 to the present, form the basis of this report. The first, at Skaha Bluffs in 2011/12, revealed extensive winter activity, recording 1,551 bat passes over 105 sample nights [@sarell2012] . At least eleven species were detected between 7 December 2011 and 31 March 2012 and are therefore thought to hibernate in the area.
 
-Understanding the winter habitat use and ecology of bats can contribute to management decisions around recreational and industrial activities. Understanding how bats use non-cave features, including rock crevices, talus, and trees, for hibernating will also contribute to our understanding of ‎*Pseudogymnoascus destructans* (fungus causing white-nose syndrome in bats) transmission in BC and influence treatment options.
+BC Parks followed with a multi-year acoustic monitoring study across the Okanagan, running from 2019 through the winter of 2023 to locate potential hibernacula. It recorded ten species in late fall and early winter, and intermittently through the winter, all in rocky outcrops and canyons; this activity was initially interpreted as evidence of hibernacula near the detectors [@paterson2024] . Field surveys in 2024/25, however, pointed to an alternative: bats may have been moving rapidly through these sites, using them as flight corridors rather than roosting nearby. Long-term detector data may therefore be a weaker indicator of local hibernation than first believed, and confirming whether bats actually roost in these features, and pinpointing the microsites they use, would substantially advance understanding of their winter ecology.
 
-Winter acoustic sampling has occured in the South Okanagan starting in the 2019 until winter 2026 with the purpose of identifying potential locations for winter hibernacula. The multi-year acoustic monitoring confirmed winter bat activity, which has been interpreted as indicative of hibernacula in the immediate area. However, our field surveys suggested that bats might be flying rapidly through the area, using the site as a flight corridor. Calls recorded on the multi-year detector may, therefore, not be as indicative of immediate, local hibernation as was first believed. Because of these results in 2024/25, the team decided to consider an alternative approach to indentifying netting sites.
+This motivated a shift in approach. In 2024/25, @skurikhina2025 established a capture site at Doctor's Wall to locate hibernacula microhabitats directly. The pilot assessed the feasibility of fall and winter capture and tracking in South Okanagan parks and protected areas, and used radiotelemetry to identify the microsites tagged bats used. Specifically, it aimed to:
 
-In 2024/25 work occured at Doctor’s Wall as a capture site to identify local hibernacula microhabitats. This work was led by Skurihina and Kellner, to assess the feasibility of fall/winter bat capture and tracking in South Okanagan parks and protected areas and, to identify microsites used by tagged bats through radiotelemetry. Specifically, this pilot project aimed to
+- assess whether bats could be captured in late fall and early winter in the South Okanagan, particularly Skaha Park and Haynes Lease Ecological Reserve;
 
-1.  Assess the ability to capture bats in late fall/early winter in the south Okanagan, particularly Skaha Park and Haynes Lease Ecological Reserve,
+- begin identifying the microsites bats use in late fall and winter; and
 
-2.  begin to identify microsites used by bats in late fall/winter, and
+- test the assumption underlying acoustic monitoring, that late fall and early winter detections indicate bats hibernating nearby, since relocating tagged bats by telemetry would confirm use of the immediate area.
 
-3.  test the assumption made in acoustic monitoring that late fall/early winter detections are indicative of bats hibernating in the vicinity – relocation via telemetry would confirm the use of the immediate area.
+In 2025/26 we also invested in data capture and sharing. All acoustic data from long-term monitoring sites [@paterson2024; @skurikhina2025] were submitted to the North American Bat Monitoring Program database and to WildTrax, supporting larger-scale analyses and allowing the files to be stored and re-analysed in future. Data from @sarell2012 were not added to these databases, but both of the other projects datasets were submitted to the BC Wildlife Species Inventory database.
 
-In 20256/26, we also invested in data capture and sharing, with submission of all acoustic data from long-term monitoring sites to the North American Bat Monitoring Program database and to WildTrax.This will allow contribution to additional larger scale analyses, and storage and re-analysis of acoustic files in future if needed.
-
-Acoustic data from short-term monitoring sites was not submitted to databases. This data and the longer-term monitoring dataset was submitted to BC Wildlife Species Inventory database.
-
-Finally, we invested in developing a data visualization tool that future results can be added into. While initially simple, this tool should be easy to enhance to make it a useful interactive tool to examine patterns in winter bat detections in Okanagan Parks and Protected Areas.
+Finally, we developed a data visualization tool that future results can be added to. Though simple at present, it is designed to be readily expanded into an interactive resource for examining patterns in winter bat detections across Okanagan parks and protected areas.
 
 # Methodology
 
 ## Acoustic Monitoring
 
-Passive acoustic monitoring was conducted using Wildlife Acoustic Song Meter MiniBat units, placed out for one to multiple nights, to confirm bat presence and aid in selecting suitable netting microsites. Occasional active monitoring was done during mist-netting, using a handheld Wildlife Acoustic Echometer Touch Pro to monitor bat activity at each capture site. Monitoring effort was not recorded for active monitoring (@tbl-sites).  For the 2012 Sarell project acoustic monitoring was done with SM2 Bat and SM2Bat+ units from wildlife acoustics. Most sites were sampled as full-spectrum wave files but the Fortress, Wave, No Climbs and Great White site sin 2012 were sampled only with zero crossing.
+Passive acoustic monitoring was conducted using Wildlife Acoustic Song Meter MiniBat units, placed out for one to multiple nights, to confirm bat presence and aid in selecting suitable netting microsites. Occasional active monitoring was done during mist-netting, using a handheld Wildlife Acoustic Echometer Touch Pro to monitor bat activity at each capture site. Monitoring effort was not recorded for active monitoring (@tbl-sites).  For the @sarell2012 project acoustic monitoring was done with SM2 Bat and SM2Bat+ units from wildlife acoustics. Most sites were sampled as full-spectrum wave files but the Fortress, Wave, No Climbs and Great White site sin 2012 were sampled only with zero crossing.
 
 ```{r}
 #| echo: false
@@ -1019,11 +1048,23 @@ tbl
 
 Acoustic results for the sites sampled in 2012 were analyzed using Sonobat (version 3.05 Great Basin) if they were full spectrum wave files, and if they were zero-cross files thery were manually reviewd using Analook software. For all other projects data were analyzed using Kaleidoscope Pro (Wildlife Acoustics, version 5.6.8) with bat auto ID Bats of North America 5.8.1 modified for the region. The species list included Pallid Bats (*Antrozous pallidus*, ANPA), Townsend’s Big-eared Bat (*Corynorhinus townsendii*, COTO), Big Brown Bat (*Eptesicus fuscus*, EPFU), Hoary Bat (*Lasiurus cinereus*, LACI), Silver-haired Bat (*Lasionycteris noctivagans*, LANO), Californian Myotis (*Myotis californicus*, MYCA), Western small-footed Myotis (*M. ciliolabrum*, MYCI), Long-eared Myotis (*M. evotis*, MYEV), Little Brown Myotis (*M. lucifugus*, MYLU), Fringed Myotis (*M. thysanodes*, MYTH), Long-legged Myotis (*M. volans*, MYVO), and Yuma Myotis (*M. yumanensis*, MYYU). All files were manually reviewed by Brian Paterson and Mandy Kellner.
 
+## Summary of Results
+
+We summarized results differently depending on the data available for each study. For @skurikhina2025 and @paterson2024 , we worked from the raw detection data; for @sarell2012 , we used the summary data reported in their own study. We then compiled all three datasets into a single dataframe recording the number of species identified per night at each site, along with site location and deployment and retrieval dates. Locations were kept separate even when they shared the same or similar names, so that distinct sites were not conflated in the summaries.
+
+### Data Submission
+
+The long term acoustic monitoring data set for the @paterson2024 and @skurikhina2025 studies has been formatted and submitted to BC Wildlife Species Inventory under project 6430 - South Okanagan Bat Hibernacula Project. Data has been also been submitted to NABat and can be viewed in the [Partner Portal](#0)) under project: South Okanagan Bat Winter Bat Project (Project ID:16855). Analyzed acoustic files have been submitted to [WildTrax](#0) and are available can be found under the project: South Okanagan Bat Winter Bat. Access to data sources will require permission from Mandy Kellner, and can be requested directly through the portals.
+
 # Results
 
-Acoustic sampling happened in a total of 8 years, sampling a total of `r length(unique(OK$Sample.Station.Label))` unique sites. Across all survey years, `r top_site` had the highest number of recordings in a single year (`r top_site_yr`), with a total of `r formatC(top_site_n, format = "d", big.mark = ",")` detections. The greatest sampling effort in terms of site coverage occurred in `r top_sampled_year`, during which `r top_sampled_nsites` unique sites were monitored.
+Acoustic sampling happened in a total of 7 years, sampling a total of `r length(unique(OK$Sample.Station.Label))` unique sites @fig-monitoring-locations . Across all survey years, `r top_site` had the highest number of recordings in a single year (`r top_site_yr`), with a total of `r formatC(top_site_n, format = "d", big.mark = ",")` detections. The greatest sampling effort in terms of site coverage occurred in `r top_sampled_year`, during which `r top_sampled_nsites` unique sites were monitored.
 
 In total there have been `r nrow(OK)` bat recordings recorded over the length of the study. A total of `r n_confirmed` bat species were confirmed across all sites and years. The most frequently recorded species was `r top_spp_code`, with `r formatC(top_spp_n, format = "d", big.mark = ",")` detections.
+
+::: {.content-visible when-format="pdf"}
+To view summary species counts for each site refer to [Appendix A](#appendix-a)
+:::
 
 ::: {.content-visible when-format="html"}
 ## Interactive Map
@@ -1035,38 +1076,47 @@ In total there have been `r nrow(OK)` bat recordings recorded over the length of
 #| warning: false
 #| message: false
 #| include: true
-#| fig-cap: "Proportion of species bat passes at each site. Only Species or species couplets that identified at lesat 5% of the total tags appear on map"
+#| out-width: "100%"
+#| fig-align: "center"
+#| fig-cap: "Proportion of species bat passes at each site. Only Species or species couplets that identified at least 5% of the total tags appear on map"
 #| label: fig-monitoring-locations
-
-if (knitr::pandoc_to("html")){
+if (knitr::pandoc_to("html")) {
   m_ok
-}else {
+} else {
   dir.create(file.path(getwd(), "Figures"), showWarnings = FALSE)
   map_file <- file.path(getwd(), "Figures", "survey_map.png")
-
-  # Attach legend for the static screenshot
+  
+  # Static legend overlay: addControl legends don't survive the mapshot2 capture,
+  # so we inject the same legend_html as a positioned div that IS captured.
+  # Sits just above the tile attribution in the bottom-right corner.
+  legend_overlay <- htmltools::tags$div(
+    style = "position:absolute; bottom:26px; right:8px; z-index:1000;",
+    legend_html
+  )
+  
   m_pdf <- m_ok %>%
-    addControl(legend_html, position = "bottomright")
-
+    htmlwidgets::prependContent(
+      htmltools::tags$style(htmltools::HTML(
+        ".leaflet-top.leaflet-right { display:none !important; }"
+      )),
+      legend_overlay
+    )
+  
   tryCatch({
     mapview::mapshot2(
       m_pdf,
-      file = map_file,
-      delay = 5,
-      vwidth  = 900,
-      vheight = 1100
+      file    = map_file,
+      delay   = 5,
+      vwidth  = 1000,
+      vheight = 1350
     )
   }, error = function(e) {
     message("mapshot2 failed: ", e$message)
   })
-
+  
   knitr::include_graphics(map_file)
 }
 ```
-
-## Data Submission
-
-The long term acoustic monitoring data set has been formatted and submitted to BC Wildlife Species Inventory under project 6430 - South Okanagan Bat Hibernacula Project. Data has been also been submitted to NABat and can be viewed in the [Partner Portal](https://sciencebase.usgs.gov/nabat/#/explore)) under project: South Okanagan Bat Winter Bat Project (Project ID:16855). Analyzed acoustic files have been submitted to [WildTrax](https://wildtrax.ca/) and are available can be found under the project: South Okanagan Bat Winter Bat. Access to data sources will require permission from Mandy Kellner, and can be requested directly through the portals.
 
 # Discussion
 
@@ -1084,6 +1134,134 @@ There are several underground cave/talus-cave systems known to BC Parks. Assessm
 This work was supported by funding from the BC Parks License Plate Program, as well as in-kind staff time, vehicles, and equipment from BC Parks and WLRS.
 
 Data included in this compilation and summary was from work done for BC Parks by Brian Paterson and BC Water, Land and Resource Stewardship. Reports and summarized data are available on the BC Wildlife Species Inventory website.
+
+{{< pagebreak >}}
+
+```{r}
+#| label: AppendixA
+#| echo: false
+#| warning: false
+#| message: false
+#| output: asis
+# ---- Appendix A: per-site popup content, PDF only ------------------------
+# Recreates the pie chart + "Mean detections by date" chart from the map
+# popups, screenshots each with webshot2, one site per subsection.
+if (!knitr::pandoc_to("html")) {
+  
+  appx_dir <- "Figures/AppendixA"
+  if (!dir.exists(appx_dir)) dir.create(appx_dir, recursive = TRUE)
+  
+  pie_min_share <- if (exists("pie_min_share")) pie_min_share else 0.02
+  
+  # --- Source display order. EDIT to match your exact (trimmed) Source strings.
+  #     Anything not listed here sorts alphabetically after these.
+  source_order <- c("Sarrell 2012", "Paterson 2024", "Skurikhina/Kellner 2025")
+  src_priority <- function(s) {
+    p <- match(s, source_order)
+    ifelse(is.na(p), length(source_order) + 1L, p)
+  }
+  
+  # --- One row per site: coords, its source(s), and an ordering key -----------
+  site_meta <- map_data %>%
+    dplyr::mutate(src = trimws(Source)) %>%
+    dplyr::group_by(site_name) %>%
+    dplyr::summarise(
+      lat         = dplyr::first(lat),
+      lon         = dplyr::first(lon),
+      sources_str = { u <- unique(src); paste(u[order(src_priority(u), u)], collapse = ", ") },
+      order_key   = min(src_priority(unique(src))),
+      .groups     = "drop"
+    ) %>%
+    dplyr::arrange(order_key, site_name)   # sites grouped/ordered by source
+  
+  # --- Build one standalone HTML card (pie + table) per site ------------------
+  html_paths <- character(nrow(site_meta))
+  card_pngs  <- character(nrow(site_meta))
+  
+  for (k in seq_len(nrow(site_meta))) {
+    site <- site_meta$site_name[k]
+    uid  <- gsub("[^a-zA-Z0-9]", "_", site)
+    sp   <- map_data %>% dplyr::filter(site_name == site)
+    
+    # -- pie: identical 2%-pooling logic to the map marker --------------------
+    sp_pie_all <- sp %>%
+      dplyr::group_by(species_pie) %>%
+      dplyr::summarise(n = sum(n), .groups = "drop") %>%
+      dplyr::arrange(dplyr::desc(n)) %>%
+      dplyr::rename(species = species_pie)
+    
+    site_total_pie <- sum(sp_pie_all$n)
+    keep_species <- sp_pie_all %>%
+      dplyr::filter(species != "Other", n / site_total_pie >= pie_min_share) %>%
+      dplyr::pull(species)
+    
+    sp_pie <- sp_pie_all %>%
+      dplyr::mutate(species = dplyr::if_else(species %in% keep_species, species, "Other")) %>%
+      dplyr::group_by(species) %>%
+      dplyr::summarise(n = sum(n), .groups = "drop") %>%
+      dplyr::arrange(dplyr::desc(n))
+    
+    pie_colors <- setNames(
+      vapply(sp_pie$species, function(s)
+        if (s %in% names(species_colors_all)) species_colors_all[[s]] else "#AAAAAA",
+        character(1)),
+      sp_pie$species)
+    
+    pie_svg <- make_pie_svg(sp_pie$n, pie_colors[sp_pie$species],
+                            labels = sp_pie$species,
+                            color_lookup = species_colors_all,
+                            uid = uid, size = 200)   # bigger than the 70px marker
+    
+    # -- all-years species table (same content as the popup's default tab) ----
+    sp_all_table <- sp %>%
+      dplyr::group_by(species_table) %>%
+      dplyr::summarise(n = sum(n), .groups = "drop") %>%
+      dplyr::rename(species = species_table)
+    
+    table_html <- paste0(
+      '<table class="sp"><tr><th>Species</th><th>n</th><th>%</th></tr>',
+      make_sp_table(sp_all_table),
+      '</table>')
+    
+    page_html <- sprintf(
+      '<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{margin:0;padding:0;background:#fff;font-family:sans-serif;}
+#card{display:inline-flex;align-items:flex-start;gap:22px;padding:14px 18px;background:#fff;}
+.pie{flex:0 0 auto;}
+.tbl{flex:0 0 auto;}
+table.sp{border-collapse:collapse;font-size:13px;min-width:240px;}
+table.sp th,table.sp td{border-bottom:1px solid #ddd;padding:3px 10px;text-align:right;}
+table.sp th:first-child,table.sp td:first-child{text-align:left;}
+table.sp th{border-bottom:2px solid #999;}
+</style></head><body>
+<div id="card"><div class="pie">%s</div><div class="tbl">%s</div></div>
+</body></html>',
+      pie_svg, table_html)
+    
+    safe          <- gsub("[^A-Za-z0-9]+", "_", site)
+    html_paths[k] <- normalizePath(file.path(appx_dir, paste0(safe, ".html")), mustWork = FALSE)
+    card_pngs[k]  <- file.path(appx_dir, paste0(safe, "_card.png"))
+    writeLines(page_html, html_paths[k])
+  }
+  
+  # --- One headless-Chrome session for all cards. asis leaks webshot2's
+  #     progress lines into the doc, so capture + discard them. -------------
+  invisible(utils::capture.output(suppressMessages(
+    webshot2::webshot(url = html_paths, file = card_pngs, selector = "#card", zoom = 3)
+  )))
+  
+  # --- Emit the appendix as markdown ------------------------------------------
+  cat("# Appendix A {#appendix-a}\n\n")
+  cat("Species detection summaries for each monitoring site.\n\n")
+  for (k in seq_len(nrow(site_meta))) {
+    if (k > 1) cat("\n\\newpage\n\n")
+    cat(sprintf("### %s {.unnumbered .unlisted}\n\n", site_meta$site_name[k]))
+    cat(sprintf("**Coordinates:** %.5f, %.5f  \n", site_meta$lat[k], site_meta$lon[k]))
+    cat(sprintf("**Source:** %s\n\n", site_meta$sources_str[k]))
+    cat(sprintf("![](%s){width=70%%}\n\n", card_pngs[k]))
+  }
+}
+```
 
 {{< pagebreak >}}
 
