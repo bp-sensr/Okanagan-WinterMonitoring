@@ -1054,7 +1054,7 @@ We summarized results differently depending on the data available for each study
 
 ### Data Submission
 
-The long term acoustic monitoring data set for the @paterson2024 and @skurikhina2025 studies has been formatted and submitted to BC Wildlife Species Inventory under project 6430 - South Okanagan Bat Hibernacula Project. Data has been also been submitted to NABat and can be viewed in the [Partner Portal](#0)) under project: South Okanagan Bat Winter Bat Project (Project ID:16855). Analyzed acoustic files have been submitted to [WildTrax](#0) and are available can be found under the project: South Okanagan Bat Winter Bat. Access to data sources will require permission from Mandy Kellner, and can be requested directly through the portals.
+The long term acoustic monitoring data set for the @paterson2024 and @skurikhina2025 studies has been formatted and submitted to BC Wildlife Species Inventory under project 6430 - South Okanagan Bat Hibernacula Project. Data has been also been submitted to NABat and can be viewed in the [Partner Portal](https://sciencebase.usgs.gov/nabat/#/explore)) under project: South Okanagan Bat Winter Bat Project (Project ID:16855). Analyzed acoustic files have been submitted to [WildTrax](https://portal.wildtrax.ca/discover) and are available can be found under the project: South Okanagan Bat Winter Bat. Access to data sources will require permission from Mandy Kellner, and can be requested directly through the portals.
 
 # Results
 
