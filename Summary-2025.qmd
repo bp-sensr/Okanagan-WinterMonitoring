@@ -857,7 +857,7 @@ function(el, x, data) {
   )
   
   m_ok <- leaflet() %>%
-    addProviderTiles(providers$CartoDB.Positron) %>%
+    addProviderTiles(providers$Esri.WorldGrayCanvas) %>%
     fitBounds(home_bounds$lng1, home_bounds$lat1,
               home_bounds$lng2, home_bounds$lat2) %>%
     htmlwidgets::onRender(
